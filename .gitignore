@@ -4,7 +4,6 @@ __pycache__/
 *$py.class
 *.so
 .Python
-env/
 build/
 develop-eggs/
 dist/
@@ -16,23 +15,31 @@ lib64/
 parts/
 sdist/
 var/
+wheels/
 *.egg-info/
 .installed.cfg
 *.egg
 
-# Virtual Environment
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Environment
+.env
+.venv
+env/
 venv/
 ENV/
-
-# Environment variables
-.env
-
-# Telegram session
-*.session
-*.session-journal
 
 # IDE
 .idea/
 .vscode/
 *.swp
-*.swo 
+*.swo
+
+# Project specific
+*.session
+*.session-journal
+excursion_monitor.session
+excursion_monitor.session-journal
+logs/ 
