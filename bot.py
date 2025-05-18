@@ -24,6 +24,7 @@ class ExcursionMonitorBot:
         self.api_hash = self._get_env_str("API_HASH")
         self.your_chat_id = self._get_env_int("YOUR_CHAT_ID")
         self.target_chat_ids = self._get_target_chats()
+        self.session_string = self._get_env_str("SESSION_STRING")
         
         # Keywords to monitor
         self.keywords = [
@@ -32,9 +33,8 @@ class ExcursionMonitorBot:
             "куда поехать", "групповая экскурсия", "экскурсионная программа"
         ]
         
-        # Initialize client
-        session_path = os.path.join(os.getcwd(), "excursion_monitor.session")
-        self.client = TelegramClient(session_path, self.api_id, self.api_hash)
+        # Initialize client with session string
+        self.client = TelegramClient(None, self.api_id, self.api_hash)
         self.available_chat_ids: Set[int] = set()
 
     def _get_env_str(self, key: str) -> str:
@@ -131,8 +131,8 @@ class ExcursionMonitorBot:
             # Register message handler
             self.client.on(events.NewMessage)(self.handle_new_message)
             
-            # Start client and initialize chats
-            await self.client.start()
+            # Start client with session string
+            await self.client.start(session=self.session_string)
             await self.initialize_chats()
             
             me = await self.client.get_me()
