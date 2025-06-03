@@ -42,4 +42,5 @@ ENV/
 *.session-journal
 excursion_monitor.session
 excursion_monitor.session-journal
-logs/ 
+logs/
+bot.log 
