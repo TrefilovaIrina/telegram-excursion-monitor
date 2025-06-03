@@ -6,16 +6,6 @@ from typing import Set
 from dotenv import load_dotenv
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
-from flask import Flask
-from threading import Thread
-from waitress import serve
-
-# Создаем Flask приложение
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return 'Bot is running!'
 
 # Загружаем переменные окружения из .env
 load_dotenv()
@@ -107,18 +97,5 @@ async def run_bot():
     logger.info("🚀 Бот запущен.")
     await client.run_until_disconnected()
 
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    serve(app, host='0.0.0.0', port=port)
-
-def main():
-    # Запускаем Flask в отдельном потоке
-    flask_thread = Thread(target=run_flask)
-    flask_thread.daemon = True  # Поток завершится вместе с основной программой
-    flask_thread.start()
-    
-    # Запускаем бота в основном потоке
-    asyncio.run(run_bot())
-
 if __name__ == "__main__":
-    main()
+    asyncio.run(run_bot())

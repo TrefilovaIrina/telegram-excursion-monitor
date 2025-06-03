@@ -1,15 +1,13 @@
 app = "telegram-excursion-monitor"
-primary_region = "ams"  # Amsterdam, можно изменить на другой регион
+primary_region = "ams"
 
 [build]
   dockerfile = "Dockerfile"
 
-[env]
-  PORT = "8080"
+[deploy]
+  strategy = "immediate"
 
-[http_service]
-  internal_port = 8080
-  force_https = true
-  auto_stop_machines = false
-  auto_start_machines = true
-  min_machines_running = 1 
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256 
