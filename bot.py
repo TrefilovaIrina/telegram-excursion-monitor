@@ -1,40 +1,69 @@
 import os
 import logging
+import asyncio
+import re
+from typing import Set
 from dotenv import load_dotenv
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 
-# Для Jupyter: не используем sys.stdout.reconfigure (он не поддерживается)
-# Просто логируем в файл и подавляем ошибку в консоли
-logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
-    handlers=[
-        logging.FileHandler("bot.log", encoding="utf-8")
-    ]
-)
-logger = logging.getLogger(__name__)
-
-# Загрузка .env
+# Загружаем переменные окружения из .env
 load_dotenv()
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
+SESSION_STRING = os.getenv("SESSION_STRING")
+YOUR_CHAT_ID = int(os.getenv("YOUR_CHAT_ID"))
+TARGET_CHAT_IDS = [int(chat_id.strip()) for chat_id in os.getenv("TARGET_CHATS").split(",")]
 
-# Чтение переменных
-api_id = int(os.getenv("API_ID"))
-api_hash = os.getenv("API_HASH")
-session_string = os.getenv("SESSION_STRING")
-your_chat_id = int(os.getenv("YOUR_CHAT_ID"))
-target_chats = [int(x) for x in os.getenv("TARGET_CHATS", "").split(",")]
-
-# Ключевые слова
+# Ключевые слова (точные)
 KEYWORDS = [
     "экскурсия", "экскурсии", "гид", "гиды", "тур", "туры",
     "поездка", "экскурсовод", "гид по", "организовать тур",
     "куда поехать", "групповая экскурсия", "экскурсионная программа"
 ]
 
-# Клиент
-client = TelegramClient(StringSession(session_string), api_id, api_hash)
-available_chat_ids = set()
+# Настройка логгирования (в Jupyter избегаем ошибок CP1252)
+logging.basicConfig(
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
+
+# Проверка точных слов через регулярные выражения
+def contains_keyword(text: str, keywords: list) -> bool:
+    text = text.lower()
+    return any(re.search(rf'\b{re.escape(word)}\b', text) for word in keywords)
+
+# Инициализация клиента
+client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+available_chat_ids: Set[int] = set()
+
+# Формирование уведомления
+async def format_alert(event):
+    try:
+        sender = await event.get_sender()
+        if hasattr(sender, "first_name"):
+            sender_name = f"{sender.first_name} {getattr(sender, 'last_name', '')}".strip()
+            sender_id = sender.id
+        else:
+            sender_name = "Неизвестный"
+            sender_id = "?"
+
+        chat = await event.get_chat()
+        chat_title = getattr(chat, "title", None) or getattr(chat, "username", None) or str(event.chat_id)
+        link = f"https://t.me/{chat.username}/{event.id}" if getattr(chat, "username", None) else "Ссылка недоступна"
+
+        return (
+            f"🔔 Обнаружено ключевое слово!\n\n"
+            f"Чат: {chat_title}\n"
+            f"От: {sender_name} (ID: {sender_id})\n"
+            f"Сообщение:\n{event.text}\n\n"
+            f"{link}"
+        )
+    except Exception as e:
+        logger.error("Ошибка при формировании уведомления", exc_info=True)
+        return "Ошибка при формировании уведомления."
 
 # Обработка новых сообщений
 @client.on(events.NewMessage)
@@ -43,65 +72,29 @@ async def handler(event):
         if event.chat_id not in available_chat_ids:
             return
 
-        if any(word in event.text.lower() for word in KEYWORDS):
-            message = await format_alert(event)
-            await client.send_message(your_chat_id, message)
-            logger.info(f"🔔 Сообщение отправлено в {your_chat_id}")
+        if contains_keyword(event.text, KEYWORDS):
+            alert = await format_alert(event)
+            await client.send_message(YOUR_CHAT_ID, alert)
+            logger.info("🔔 Отправлено уведомление.")
     except Exception as e:
-        logger.error(f"Ошибка при обработке сообщения: {e}", exc_info=True)
-
-# Формирование уведомления
-async def format_alert(event):
-    try:
-        sender = await event.get_sender()
-        sender_name = (
-            f"{getattr(sender, 'first_name', '')} {getattr(sender, 'last_name', '')}".strip()
-            if hasattr(sender, 'first_name') else getattr(sender, 'title', 'Неизвестный')
-        )
-        sender_id = getattr(sender, 'id', 'неизв.')
-    except:
-        sender_name = "Не удалось получить отправителя"
-        sender_id = "N/A"
-
-    try:
-        chat = await event.get_chat()
-        chat_title = getattr(chat, 'title', None) or getattr(chat, 'username', None) or str(event.chat_id)
-        username = getattr(chat, 'username', None)
-        link = f"https://t.me/{username}/{event.id}" if username else "🔒 Ссылка недоступна"
-    except:
-        chat_title = str(event.chat_id)
-        link = "❓ Не удалось получить ссылку"
-
-    return (
-        f"🔔 Обнаружено ключевое слово!\n\n"
-        f"Чат: {chat_title}\n"
-        f"От: {sender_name} (ID: {sender_id})\n"
-        f"Сообщение:\n{event.text}\n\n"
-        f"{link}"
-    )
-
-# Инициализация доступных чатов
-async def init_chats():
-    dialogs = await client.get_dialogs()
-    for dialog in dialogs:
-        chat_id = dialog.id
-        if chat_id in target_chats:
-            available_chat_ids.add(chat_id)
-            logger.info(f"✅ Добавлен в мониторинг: {dialog.name} (ID: {chat_id})")
-    if not available_chat_ids:
-        logger.warning("❗ Ни один чат не найден среди TARGET_CHATS")
+        logger.error("Ошибка в обработчике сообщений", exc_info=True)
 
 # Запуск бота
 async def run_bot():
     await client.start()
-    await init_chats()
-    me = await client.get_me()
-    logger.info(f"🟢 Авторизовано как: {me.first_name} ({me.id})")
-    print("🎯 Бот запущен и отслеживает:", available_chat_ids)
+    dialogs = await client.get_dialogs()
+
+    logger.info("📋 Проверяем доступные чаты...")
+    for dialog in dialogs:
+        if dialog.id in TARGET_CHAT_IDS:
+            available_chat_ids.add(dialog.id)
+            logger.info(f"✅ Добавлен: {dialog.name} ({dialog.id})")
+
+    if not available_chat_ids:
+        logger.warning("⚠️ Ни один чат не добавлен. Проверь TARGET_CHATS")
+
+    logger.info("🚀 Бот запущен.")
     await client.run_until_disconnected()
 
-# Если ты запускаешь в Jupyter
-import nest_asyncio
-import asyncio
-nest_asyncio.apply()
+# В Jupyter запускаем так:
 await run_bot()
