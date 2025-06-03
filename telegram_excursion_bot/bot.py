@@ -7,7 +7,8 @@ from dotenv import load_dotenv
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from flask import Flask
-import threading
+from threading import Thread
+from waitress import serve
 
 # Создаем Flask приложение
 app = Flask(__name__)
@@ -24,14 +25,7 @@ SESSION_STRING = os.getenv("SESSION_STRING")
 YOUR_CHAT_ID = int(os.getenv("YOUR_CHAT_ID"))
 TARGET_CHAT_IDS = [int(chat_id.strip()) for chat_id in os.getenv("TARGET_CHATS").split(",")]
 
-# Ключевые слова (точные)
-KEYWORDS = [
-    "экскурсия", "экскурсии", "гид", "гиды", "тур", "туры",
-    "поездка", "экскурсовод", "гид по", "организовать тур",
-    "куда поехать", "групповая экскурсия", "экскурсионная программа"
-]
-
-# Настройка логгирования (в Jupyter избегаем ошибок CP1252)
+# Настройка логгирования
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     level=logging.INFO,
@@ -46,6 +40,14 @@ def contains_keyword(text: str, keywords: list) -> bool:
 
 # Инициализация клиента
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+
+# Ключевые слова
+KEYWORDS = [
+    "экскурсия", "экскурсии", "гид", "гиды", "тур", "туры",
+    "поездка", "экскурсовод", "гид по", "организовать тур",
+    "куда поехать", "групповая экскурсия", "экскурсионная программа"
+]
+
 available_chat_ids: Set[int] = set()
 
 # Формирование уведомления
@@ -107,12 +109,16 @@ async def run_bot():
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    serve(app, host='0.0.0.0', port=port)
 
-if __name__ == "__main__":
+def main():
     # Запускаем Flask в отдельном потоке
-    flask_thread = threading.Thread(target=run_flask)
+    flask_thread = Thread(target=run_flask)
+    flask_thread.daemon = True  # Поток завершится вместе с основной программой
     flask_thread.start()
     
-    # Запускаем бота
+    # Запускаем бота в основном потоке
     asyncio.run(run_bot())
+
+if __name__ == "__main__":
+    main()
