@@ -1,162 +1,107 @@
 import os
 import logging
-from typing import Set
 from dotenv import load_dotenv
 from telethon import TelegramClient, events
-import asyncio
+from telethon.sessions import StringSession
 
-# Configure logging
+# Для Jupyter: не используем sys.stdout.reconfigure (он не поддерживается)
+# Просто логируем в файл и подавляем ошибку в консоли
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     level=logging.INFO,
     handlers=[
-        logging.FileHandler("bot.log"),
-        logging.StreamHandler()
+        logging.FileHandler("bot.log", encoding="utf-8")
     ]
 )
 logger = logging.getLogger(__name__)
 
-class ExcursionMonitorBot:
-    def __init__(self):
-        # Load environment variables
-        load_dotenv()
-        self.api_id = self._get_env_int("API_ID")
-        self.api_hash = self._get_env_str("API_HASH")
-        self.your_chat_id = self._get_env_int("YOUR_CHAT_ID")
-        self.target_chat_ids = self._get_target_chats()
-        self.session_string = self._get_env_str("SESSION_STRING")
-        
-        # Keywords to monitor
-        self.keywords = [
-            "экскурсия", "экскурсии", "гид", "гиды", "тур", "туры",
-            "поездка", "экскурсовод", "гид по", "организовать тур",
-            "куда поехать", "групповая экскурсия", "экскурсионная программа"
-        ]
-        
-        # Initialize client with session string
-        self.client = TelegramClient(None, self.api_id, self.api_hash)
-        self.available_chat_ids: Set[int] = set()
+# Загрузка .env
+load_dotenv()
 
-    def _get_env_str(self, key: str) -> str:
-        """Get string environment variable with error handling."""
-        value = os.getenv(key)
-        if not value:
-            raise ValueError(f"Environment variable {key} is not set")
-        return value
+# Чтение переменных
+api_id = int(os.getenv("API_ID"))
+api_hash = os.getenv("API_HASH")
+session_string = os.getenv("SESSION_STRING")
+your_chat_id = int(os.getenv("YOUR_CHAT_ID"))
+target_chats = [int(x) for x in os.getenv("TARGET_CHATS", "").split(",")]
 
-    def _get_env_int(self, key: str) -> int:
-        """Get integer environment variable with error handling."""
-        try:
-            return int(self._get_env_str(key))
-        except ValueError:
-            raise ValueError(f"Environment variable {key} must be an integer")
+# Ключевые слова
+KEYWORDS = [
+    "экскурсия", "экскурсии", "гид", "гиды", "тур", "туры",
+    "поездка", "экскурсовод", "гид по", "организовать тур",
+    "куда поехать", "групповая экскурсия", "экскурсионная программа"
+]
 
-    def _get_target_chats(self) -> list:
-        """Get and validate target chat IDs from environment."""
-        chats_str = self._get_env_str("TARGET_CHATS")
-        try:
-            return [int(chat_id.strip()) for chat_id in chats_str.split(',')]
-        except ValueError:
-            raise ValueError("TARGET_CHATS must be comma-separated integers")
+# Клиент
+client = TelegramClient(StringSession(session_string), api_id, api_hash)
+available_chat_ids = set()
 
-    async def handle_new_message(self, event):
-        """Handle new message events."""
-        try:
-            logger.info(f"Новое сообщение из чата {event.chat_id}: {event.text}")
-            logger.info(f"💬 Проверяем chat_id: {event.chat_id} против: {self.available_chat_ids}")
+# Обработка новых сообщений
+@client.on(events.NewMessage)
+async def handler(event):
+    try:
+        if event.chat_id not in available_chat_ids:
+            return
 
-            if event.chat_id not in self.available_chat_ids:
-                logger.warning(f"⚠️ Чат {event.chat_id} не отслеживается. Пропускаем.")
-                return
+        if any(word in event.text.lower() for word in KEYWORDS):
+            message = await format_alert(event)
+            await client.send_message(your_chat_id, message)
+            logger.info(f"🔔 Сообщение отправлено в {your_chat_id}")
+    except Exception as e:
+        logger.error(f"Ошибка при обработке сообщения: {e}", exc_info=True)
 
-            if any(keyword in event.text.lower() for keyword in self.keywords):
-                message = await self._prepare_notification(event)
-                await self.client.send_message(self.your_chat_id, message)
-                logger.info("✅ Уведомление отправлено.")
-                
-        except Exception as e:
-            logger.error(f"❌ Ошибка при обработке сообщения: {e}", exc_info=True)
+# Формирование уведомления
+async def format_alert(event):
+    try:
+        sender = await event.get_sender()
+        sender_name = (
+            f"{getattr(sender, 'first_name', '')} {getattr(sender, 'last_name', '')}".strip()
+            if hasattr(sender, 'first_name') else getattr(sender, 'title', 'Неизвестный')
+        )
+        sender_id = getattr(sender, 'id', 'неизв.')
+    except:
+        sender_name = "Не удалось получить отправителя"
+        sender_id = "N/A"
 
-    async def _prepare_notification(self, event):
-        """Prepare notification message with sender and chat info."""
-        try:
-            sender = await event.get_sender()
-            if hasattr(sender, 'first_name'):
-                sender_name = f"{sender.first_name or ''} {sender.last_name or ''}".strip()
-            elif hasattr(sender, 'title'):
-                sender_name = sender.title
-            else:
-                sender_name = "Неизвестный отправитель"
-        except Exception:
-            sender_name = "Не удалось получить отправителя"
-
+    try:
         chat = await event.get_chat()
         chat_title = getattr(chat, 'title', None) or getattr(chat, 'username', None) or str(event.chat_id)
-        link = f"https://t.me/{chat.username}/{event.id}" if getattr(chat, 'username', None) else "Ссылка недоступна"
+        username = getattr(chat, 'username', None)
+        link = f"https://t.me/{username}/{event.id}" if username else "🔒 Ссылка недоступна"
+    except:
+        chat_title = str(event.chat_id)
+        link = "❓ Не удалось получить ссылку"
 
-        return (
-            f"🔔 Обнаружено ключевое слово!\n\n"
-            f"Чат: {chat_title}\n"
-            f"От: {sender_name}\n"
-            f"Сообщение: {event.text}\n\n"
-            f"{link}"
-        )
+    return (
+        f"🔔 Обнаружено ключевое слово!\n\n"
+        f"Чат: {chat_title}\n"
+        f"От: {sender_name} (ID: {sender_id})\n"
+        f"Сообщение:\n{event.text}\n\n"
+        f"{link}"
+    )
 
-    async def initialize_chats(self):
-        """Initialize available chats for monitoring."""
-        dialogs = await self.client.get_dialogs()
-        logger.info("📋 Список всех чатов:")
-        
-        for d in dialogs:
-            raw_id = d.entity.id
-            full_chat_id = int(f"-100{raw_id}") if d.entity.__class__.__name__ == "Channel" else raw_id
-            
-            logger.info(f"{d.name} — {raw_id}")
-            logger.info(f"🔁 Сравниваю {full_chat_id} ∈ {self.target_chat_ids}")
-            
-            if full_chat_id in self.target_chat_ids:
-                self.available_chat_ids.add(full_chat_id)
-                logger.info(f"✅ Добавлен в мониторинг: {d.name} — {full_chat_id}")
+# Инициализация доступных чатов
+async def init_chats():
+    dialogs = await client.get_dialogs()
+    for dialog in dialogs:
+        chat_id = dialog.id
+        if chat_id in target_chats:
+            available_chat_ids.add(chat_id)
+            logger.info(f"✅ Добавлен в мониторинг: {dialog.name} (ID: {chat_id})")
+    if not available_chat_ids:
+        logger.warning("❗ Ни один чат не найден среди TARGET_CHATS")
 
-        logger.info(f"🎯 Итого доступно чатов для отслеживания: {self.available_chat_ids}")
-        
-        if not self.available_chat_ids:
-            logger.warning("❗ Ни один из чатов не был добавлен. Проверь TARGET_CHAT_IDS в .env!")
+# Запуск бота
+async def run_bot():
+    await client.start()
+    await init_chats()
+    me = await client.get_me()
+    logger.info(f"🟢 Авторизовано как: {me.first_name} ({me.id})")
+    print("🎯 Бот запущен и отслеживает:", available_chat_ids)
+    await client.run_until_disconnected()
 
-    async def start(self):
-        """Start the bot."""
-        try:
-            logger.info("🚀 Запуск бота...")
-            
-            # Register message handler
-            self.client.on(events.NewMessage)(self.handle_new_message)
-            
-            # Start client with session string
-            await self.client.start(session=self.session_string)
-            await self.initialize_chats()
-            
-            me = await self.client.get_me()
-            logger.info(f"🟢 Авторизовано как: {me.first_name} {me.last_name or ''}")
-            
-            # Run until disconnected
-            await self.client.run_until_disconnected()
-            
-        except Exception as e:
-            logger.error(f"❌ Критическая ошибка: {e}", exc_info=True)
-            raise
-        finally:
-            await self.client.disconnect()
-            logger.info("👋 Бот остановлен")
-
-def main():
-    """Main entry point."""
-    bot = ExcursionMonitorBot()
-    try:
-        asyncio.run(bot.start())
-    except KeyboardInterrupt:
-        logger.info("Получен сигнал остановки")
-    except Exception as e:
-        logger.error(f"Неожиданная ошибка: {e}", exc_info=True)
-
-if __name__ == "__main__":
-    main() 
+# Если ты запускаешь в Jupyter
+import nest_asyncio
+import asyncio
+nest_asyncio.apply()
+await run_bot()

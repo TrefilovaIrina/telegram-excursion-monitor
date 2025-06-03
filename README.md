@@ -8,6 +8,7 @@
 - Настраиваемый список ключевых слов
 - Уведомления содержат информацию об отправителе и прямую ссылку на сообщение
 - Подробное логирование работы бота
+- Безопасная авторизация через session string
 
 ## Установка
 
@@ -37,12 +38,21 @@ pip install -r requirements.txt
 
 2. Узнайте свой `CHAT_ID`, написав боту [@userinfobot](https://t.me/userinfobot)
 
-3. Создайте файл `.env` на основе `.env.example` и заполните его своими данными:
+3. Создайте файл `.env` на основе `.env.example` и заполните `API_ID` и `API_HASH`
+
+4. Получите SESSION_STRING:
+```bash
+python get_session_string.py
+```
+Скопируйте полученный токен и добавьте его в `.env` файл как `SESSION_STRING`
+
+5. Добавьте остальные параметры в `.env`:
 ```env
 API_ID=your_api_id
 API_HASH=your_api_hash
 YOUR_CHAT_ID=your_chat_id
 TARGET_CHATS=chat_id1,chat_id2,chat_id3
+SESSION_STRING=your_session_string
 ```
 
 ## Запуск
@@ -50,8 +60,6 @@ TARGET_CHATS=chat_id1,chat_id2,chat_id3
 ```bash
 python bot.py
 ```
-
-При первом запуске потребуется авторизация в Telegram через номер телефона и код подтверждения.
 
 ## Логирование
 
@@ -78,7 +86,7 @@ python bot.py
 
 ## Безопасность
 
-- Не публикуйте файл `.env` и файлы сессии (`.session`) в публичном доступе
+- Не публикуйте файл `.env` и SESSION_STRING в публичном доступе
 - Используйте виртуальное окружение
 - Регулярно обновляйте зависимости
 
