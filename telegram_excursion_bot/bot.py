@@ -97,4 +97,5 @@ async def run_bot():
     await client.run_until_disconnected()
 
 # В Jupyter запускаем так:
-await run_bot()
+if __name__ == "__main__":
+    asyncio.run(run_bot())
