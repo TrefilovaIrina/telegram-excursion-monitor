@@ -21,8 +21,10 @@ wheels/
 *.egg
 
 # Jupyter Notebook
-.ipynb_checkpoints
+.ipynb_checkpoints/
 *.ipynb
+Untitled*.ipynb
+Bot_ex.ipynb
 
 # Environment
 .env
@@ -40,7 +42,9 @@ ENV/
 # Project specific
 *.session
 *.session-journal
+temp_session.session
 excursion_monitor.session
-excursion_monitor.session-journal
-logs/
+
+# Logs
+*.log
 bot.log 
