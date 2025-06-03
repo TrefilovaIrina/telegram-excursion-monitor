@@ -6,6 +6,15 @@ from typing import Set
 from dotenv import load_dotenv
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
+from flask import Flask
+import threading
+
+# Создаем Flask приложение
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return 'Bot is running!'
 
 # Загружаем переменные окружения из .env
 load_dotenv()
@@ -96,6 +105,14 @@ async def run_bot():
     logger.info("🚀 Бот запущен.")
     await client.run_until_disconnected()
 
-# В Jupyter запускаем так:
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
 if __name__ == "__main__":
+    # Запускаем Flask в отдельном потоке
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.start()
+    
+    # Запускаем бота
     asyncio.run(run_bot())
